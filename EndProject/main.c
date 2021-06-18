@@ -3,7 +3,7 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
- 
+
 #include "_main.h"
 #include "_glcd2.h"
 #include "_glcd.h"
@@ -11,26 +11,23 @@
 
 #define F_CPU 14745600UL
 #define usePoint 100
+#define bosstimeSetting 350
 
-enum gameStates{ waiting = 0, running = 1, win = 2, loose = 3, bosstime = 4 };
-enum characterCodes{ birld_L = 1, birld_H = 2, cactus_ = 3, dino_ = 4, bossattack_ = 5,};
+enum gameStates{ waiting = 0, running = 1, win = 2, lose = 3, bosstime = 4 };
+enum characterCodes{ birld_L = 1, birld_H = 2, cactus_ = 3, dino_ = 4, bossattack_L = 5,bossattack_M = 6,bossattack_H = 7,};
 enum boardSize{x_ = 51, y_ = 140};
 
 // game background data
-byte gameBoard[x_][y_] = {0,};
-byte backupBoard[x_][y_] = {0,};
-byte dinoBlock[23][24] = {dino_,};
-byte birldBlock_L[24][22] = {birld_L,};
-byte birldBlock_H[24][22] = {birld_H,};
-byte cactusBlock[15][22] = {cactus_,};
-byte bossAttackBlock[10][10] = {bossattack_,};
+byte gameBoard[y_] = {0,};
+byte backupBoard[y_] = {0,};
 
 uint8_t gameState = waiting;
 unsigned int point = 0;
 unsigned int times = 0;
-unsigned int speed = 0;
+unsigned int speed = 2;
 unsigned char cnt;
-
+byte bosscounter = 3;
+byte jumpFlag = 0x00;
 
 // init 함수
 void Init_Timer0(void);		//timer 초기화 변수
@@ -41,7 +38,7 @@ void init_devices(void);	//디바이스 초기화
 // game 기능 함수
 void gameInit(void);
 void backgroundMove(void);
-byte makeBlock(void);
+void makeBlock(void);
 void copy(byte *arr1, byte *arr2); //arr1의 값을 arr2에 복사한다.
 void EndCheck(void);
 void speedDelay(void);
@@ -62,29 +59,56 @@ void blockRouter(uint8_t block, int index);
 
 //----------------------------------main---------------------------------------------------
 int main(void){
+	init_devices(); //cli(), Port_init(), Adc_init(), lcd_init(), sei(), inturrupt_init()
+	printInitScreen();
 
-	 init_devices(); //cli(), Port_init(), Adc_init(), lcd_init(), sei(), inturrupt_init()
-	 printInitScreen();
-
-	 while(1) {
+	while(1) {
 		while((PIND & 0x80) == 0x80); // 게임 시작 대기상태
 		
 		gameInit();
+		byte flag = 0x00;
 		while(gameState == running || gameState == bosstime){
-			//backgroundMove();
+			backgroundMove();
+			if(gameState != bosstime){
+				if((flag / 44)){
+					makeBlock();	// 연속해서 block이 생성되지 않게 함 연속일 경우 피할 수 없이 종료됨
+					flag /= 44;
+				}
+				flag++;
+			}
+			else{
+				printBoss(0);
+				if((flag / 44)){
+					gameBoard[y_-4] = (rand() % 3) + 5;	// 연속해서 block이 생성되지 않게 함 연속일 경우 피할 수 없이 종료됨
+					flag /= 44;
+				}
+				flag++;
+			}
 			UI_Update(0);
 			speedDelay();
+			
+			if(times == 50)
+				speed = 1;
+			else if(times == 150)
+				speed = 2;
+			else if(times == 300)
+				speed = 3;
+			
 		}
+		
+		// End
 		printEndPage();
-	 }
-
+	}
 }
 //------------------------------------------------------------------------------------------
-
+void makeBlock(void){
+	// 0~3까지의 random한 characterCode를 고른다.
+	// 0일 경우 장애물 생성하지 않음
+	gameBoard[y_-1] = rand() % 4;
+}
 void backgroundMove(void){
-	for(size_t x = 0; x < x_; x++)
 	for(size_t y = 0; y< (y_ - 1); y++){
-		backupBoard[x][y] = gameBoard[x][y+1];
+		backupBoard[y] = gameBoard[y+1];
 	}
 	memcpy(gameBoard, backupBoard, sizeof(backupBoard));
 	memset(backupBoard, 0, sizeof(backupBoard));
@@ -92,12 +116,43 @@ void backgroundMove(void){
 void speedDelay(void){
 	// speed가 올라갈 수록 delay텀이 짧아지면서 속도가 향상됨
 	if(speed == 0)
-		_delay_ms(800); 
+	_delay_ms(600);
 	else if(speed == 1)
-		_delay_ms(600);
-	else //if(speed == 2)
-		_delay_ms(400);
+	_delay_ms(300);
+	else if(speed == 2)
+	_delay_ms(100);
+	else
+	_delay_ms(50);
 }
+void EndCheck(void){
+	byte code = gameBoard[23];
+	switch(code){
+		// 점프 안해야 할 때
+		case birld_H:
+		case bossattack_H:
+		if(jumpFlag != 0x00){
+			gameState = lose;
+			return;
+		}
+		break;
+		// 점프 해야 할 때
+		case birld_L:
+		case cactus_:
+		case bossattack_L:
+		case bossattack_M:
+		if(jumpFlag != 0xFF){
+			gameState = lose;
+			return;
+		}
+		break;
+		default:
+		if (times == 300 && point == 600){
+			gameState = win;
+			point += 500;
+		}
+	}
+}
+
 //timer 초기화 변수
 void Init_Timer0(void){
 	// 인터럽트 발생주기   = 1/(14.7456M)  * 256 * 1024(분주)= 17.8 ms	// 17.8ms * 56 = 1 sec
@@ -105,7 +160,7 @@ void Init_Timer0(void){
 	TCNT0=0;
 	TIMSK=0x01;
 }
-ISR(TIMER0_OVF_vect){	if(gameState == running || gameState == bosstime){		cnt++;		if(cnt==45){			times++;			point+=2;			printPoint();			cnt=0;			if(times == 500) 				gameState = bosstime;		}	}}
+ISR(TIMER0_OVF_vect){	if(gameState == running || gameState == bosstime){		cnt++;		if(cnt==45){			times++;			point+=2;			printPoint();			cnt=0;						if(times == bosstimeSetting){				gameState = bosstime;			}		}	}}
 //포트 초기화
 void Port_init(void)
 {
@@ -119,8 +174,8 @@ void Port_init(void)
 
 //인터럽트 초기화
 void Interrupt_init(void){
-	EIMSK = 0x03;  //0번, 1번
-	EICRA = 0x0A;  //falling trigger
+	EIMSK = 0x07;  //0번, 1번
+	EICRA = 0x2A;  //falling trigger
 	SREG |= 0x80;
 }
 
@@ -133,12 +188,6 @@ void init_devices(void)
 	Init_Timer0();
 	Interrupt_init();
 	sei(); //모든 인터럽트 허가
-	
-	memset(dinoBlock, dino_,sizeof(dinoBlock));
-	memset(birldBlock_L, birld_L, sizeof(birldBlock_L));
-	memset(birldBlock_H, birld_H, sizeof(birldBlock_H));
-	memset(cactusBlock, cactus_, sizeof(cactusBlock));
-	memset(bossAttackBlock, bossattack_, sizeof(bossAttackBlock));
 
 }
 
@@ -146,8 +195,21 @@ void init_devices(void)
 SIGNAL(INT0_vect)
 {
 	if(gameState == running || gameState == bosstime){
-		_delay_ms(30);
-		gameState = loose;
+		jumpFlag = ~jumpFlag;	//jump flag on
+		for(byte i = 0; i< 23 ; i++){
+			backgroundMove();
+			UI_Update(i);
+			speedDelay();
+		}
+		UI_Update(23);
+		speedDelay();
+		for(byte i = 22; i > 0 ;i--){
+			backgroundMove();
+			UI_Update(i);
+			speedDelay();
+		}
+		//gameState = lose;
+		jumpFlag = ~jumpFlag;	// jump flag off
 	}
 }
 
@@ -156,12 +218,22 @@ SIGNAL(INT1_vect)
 {
 	if(gameState == running || gameState == bosstime){
 		if(point < usePoint)
-			return;
+		return;
 		point -= usePoint;
 		printPoint();
 		printDinoAttack();
 		_delay_ms(30);
-		gameState = win;
+		memset(gameBoard, 0, sizeof(gameBoard));
+		lcd_clear();
+		UI_Update(0);
+		if(gameState == bosstime)
+		if(!(--bosscounter)) gameState = win;
+	}
+}
+SIGNAL(INT2_vect)
+{
+	if(gameState == running || gameState == bosstime){
+		gameState = lose;
 	}
 }
 
@@ -177,9 +249,14 @@ void printInitScreen(void){
 }
 
 void gameInit(){
+	
 	cnt = 0;
 	times = 0;
 	point = 0;
+	bosscounter = 3;
+	jumpFlag = 0x00;
+	
+	memset(gameBoard, 0, sizeof(gameBoard));
 	
 	lcd_clear();
 	ScreenBuffer_clear();
@@ -205,7 +282,7 @@ void printEndPage(void){
 		lcd_string(3, 0, "====================");
 	}
 	else{
-		lcd_string(2, 4, "You Loose...");
+		lcd_string(2, 4, "You lose...");
 		lcd_string(3, 0, "====================");
 	}
 	lcd_string(4, 2, "Your Point:");
@@ -219,9 +296,9 @@ void printCactus(uint8_t x){
 	glcd_draw_bitmap(cactus,40, x, 27, 16);
 }
 void printBirld(uint8_t x, uint8_t y){
-	uint8_t updown[] = {0, 25};
+	uint8_t updown[] = {0, 22};
 	//glcd_draw_bitmap(birld,(38-updown[y]), (130-x), 24,24);
-	glcd_draw_bitmap(birld,(38-updown[y]), x, 24,24);
+	glcd_draw_bitmap(birld,(36-updown[y]), x, 24,24);
 }
 void printDino(uint8_t jump){
 	glcd_draw_bitmap(dino,(38-jump),0, 26,24);
@@ -242,23 +319,32 @@ void printDinoAttack(void){
 }
 void printBossAttack(uint8_t x, uint8_t y){
 	uint8_t updown[] = {11, 24, 0};
-	GLCD_Circle(55-updown[y], (88-x), 5);
+	//GLCD_Circle(55-updown[y], (88-x), 5);
+	GLCD_Circle(55-updown[y], x, 5);
 }
 
 void blockRouter(uint8_t block, int index){
 	switch(block){
 		case birld_L:
-			printBirld(index, 0);
-			break;
+		printBirld(index, 0);
+		break;
 		case birld_H:
-			printBirld(index, 1);
-			break;
+		printBirld(index, 1);
+		break;
 		case cactus_:
-			printCactus(index);
-			break; 
-		case bossattack_: break;
+		printCactus(index);
+		break;
+		case bossattack_L:
+		printBossAttack(index, 0);
+		break;
+		case bossattack_M:
+		printBossAttack(index, 1);
+		break;
+		case bossattack_H:
+		printBossAttack(index, 2);
+		break;
 		default:
-			break;
+		break;
 	}
 }
 void UI_Update(uint8_t jump){
@@ -268,13 +354,11 @@ void UI_Update(uint8_t jump){
 	printDino(jump);
 	uint8_t pre = 0;
 	for(int i = 0; i<y_;i++){
-		if(pre == gameBoard[50][y_])
-			continue;
-		else if(gameBoard[50][y_] == 0 ){
-			pre = 0;
-			continue;
-		}
-		pre = gameBoard[50][y_];
+		if(0 == gameBoard[i])
+		continue;
+		pre = gameBoard[i];
 		blockRouter(pre, i);
 	}
+	_delay_ms(10);
+	EndCheck();
 }
