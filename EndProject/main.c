@@ -38,26 +38,26 @@ void Interrupt_init(void);	//인터럽트 초기화
 void init_devices(void);	//디바이스 초기화
 
 // game 기능 함수
-void gameInit(void);
-void backgroundMove(void);
-void makeBlock(void);
+void gameInit(void);		// 게임 시작전 초기화
+void backgroundMove(void);	// 배경 장애물 움직이기 위한 함수
+void makeBlock(void);		// 일정 시간동안 랜덤한 장애물을 생성하는 함수
 void copy(byte *arr1, byte *arr2); //arr1의 값을 arr2에 복사한다.
-void EndCheck(void);
-void speedDelay(void);
+void EndCheck(void);		// 게임이 종료되었는지 판단하는 함수
+void speedDelay(void);		// 게임 진행 속도를 결정하는 함수
 
 // UI 표현 기능 함수
-void printInitScreen(void);
-void printDino(uint8_t jump);
-void printBoss(uint8_t y);
-void printBirld(uint8_t x, uint8_t y);
-void printCactus(uint8_t x);
-void printDinoAttack(void);
-void printBossAttack(uint8_t x, uint8_t y);
-void printPoint(void);
-void printEndPage(void);
+void printInitScreen(void);				// 초기화면 출력
+void printDino(uint8_t jump);			// Dino 출력
+void printBoss(uint8_t y);				// Boss Monster 출력
+void printBirld(uint8_t x, uint8_t y);	// 장애물1 새 출력
+void printCactus(uint8_t x);			// 장애물2 선인장 출력
+void printDinoAttack(void);				// Dino의 필살기 출력
+void printBossAttack(uint8_t x, uint8_t y);	// Boss Monster 공격 출력
+void printPoint(void);					// 게임 진행 점수 및 시간 출력
+void printEndPage(void);				// 게임 종료 시 표현할 페이지 출력
 
-void UI_Update(uint8_t jump);
-void blockRouter(uint8_t block, int index);
+void UI_Update(uint8_t jump);			// 게임 진행 중 전체 화면 갱신 메소드
+void blockRouter(uint8_t block, int index);	// Background에 동작하는 장애물들을 UI에 출력하는 메소드
 
 //----------------------------------main---------------------------------------------------
 int main(void){
@@ -65,13 +65,13 @@ int main(void){
 	printInitScreen();
 
 	while(1) {
-		while((PIND & 0x80) == 0x80); // 게임 시작 대기상태
+		while((PIND & 0x80) == 0x80); // 게임 시작 대기상태, PIND.7 입력이 들어올 경우 루프를 벗어나 게임을 시작한다.
 		
-		gameInit();
-		byte flag = 0x00;
-		while(gameState == running || gameState == bosstime){
-			backgroundMove();
-			if(gameState != bosstime){
+		gameInit();					// 게임 초기화
+		byte flag = 0x00;			// 연속하지 않은 장애물을 생성하기 위한 FLAG
+		while(gameState == running || gameState == bosstime){// 게임 시작
+			backgroundMove();		// 매 순간마다 배경이 움직인다.
+			if(gameState != bosstime){	// boss time일 때 장애물은 나오지 않고 보스의 공격만 나온다.
 				if((flag / 44)){
 					makeBlock();	// 연속해서 block이 생성되지 않게 함 연속일 경우 피할 수 없이 종료됨
 					flag /= 44;
@@ -110,6 +110,7 @@ void makeBlock(void){
 	gameBoard[y_-1] = rand() % 4;
 }
 void backgroundMove(void){
+	// 왼쪽으로 데이터를 한칸씩 민다.
 	for(size_t y = 0; y< (y_ - 1); y++){
 		backupBoard[y] = gameBoard[y+1];
 	}
@@ -119,9 +120,9 @@ void backgroundMove(void){
 void speedDelay(void){
 	// speed가 올라갈 수록 delay텀이 짧아지면서 속도가 향상됨
 	if(speed == 0)
-	_delay_ms(400);
+	_delay_ms(300);
 	else if(speed == 1)
-	_delay_ms(200);
+	_delay_ms(150);
 	else if(speed == 2)
 	_delay_ms(100);
 	else
@@ -130,7 +131,7 @@ void speedDelay(void){
 void EndCheck(void){
 	byte code = gameBoard[23];
 	switch(code){
-		// 점프 안해야 할 때
+		// 점프 안해야 할 때 점프할 경우 게임 종료
 		case birld_H:
 		case bossattack_H:
 		if(jumpFlag != 0x00){
@@ -138,7 +139,7 @@ void EndCheck(void){
 			return;
 		}
 		break;
-		// 점프 해야 할 때
+		// 점프 해야 할 때 점프를 하지 않을 경우 게임 종료
 		case birld_L:
 		case cactus_:
 		case bossattack_L:
@@ -163,7 +164,7 @@ void Init_Timer0(void){
 	TCNT0=0;
 	TIMSK=0x01;
 }
-ISR(TIMER0_OVF_vect){	if(gameState == running || gameState == bosstime){		cnt++;		if(cnt==45){			times++;			point+=2;			printPoint();			cnt=0;						if(times == bosstimeSetting){				gameState = bosstime;			}		}	}}
+ISR(TIMER0_OVF_vect){	if(gameState == running || gameState == bosstime){		cnt++;		if(cnt==17){			times++;			point+=2;			printPoint();			cnt=0;						if(times == bosstimeSetting){ // boss 출격				gameState = bosstime;			}		}	}}
 //포트 초기화
 void Port_init(void)
 {
@@ -200,7 +201,7 @@ SIGNAL(INT0_vect)
 	if(gameState == running || gameState == bosstime){
 		jumpFlag = ~jumpFlag;	//jump flag on
 		for(byte i = 0; i< 23 ; i++){
-			backgroundMove();
+			backgroundMove();	// jump하는 경우에도 배경은 움직임
 			UI_Update(i);
 			speedDelay();
 		}
@@ -228,10 +229,13 @@ SIGNAL(INT1_vect)
 		memset(gameBoard, 0, sizeof(gameBoard));
 		lcd_clear();
 		UI_Update(0);
-		if(gameState == bosstime)
-		if(!(--bosscounter)){
-			 gameState = win;
-			 point += 1000;
+		if(gameState == bosstime){
+			printBoss(0);
+			if(!(--bosscounter)){
+				// boss monster 퇴치
+				 gameState = win;
+				 point += 1000;
+			}
 		}
 	}
 }
@@ -281,7 +285,7 @@ void printPoint(void){
 	lcd_string(1, 0, "====================");
 }
 void printEndPage(void){
-	// You need point calculate
+	// End and point 출력
 	lcd_clear();
 	if(gameState == win){
 		lcd_string(1, 1, "Congratulation");
@@ -367,5 +371,5 @@ void UI_Update(uint8_t jump){
 		pre = gameBoard[i];
 		blockRouter(pre, i);
 	}
-	EndCheck();
+	EndCheck();	// 게임이 끝났는지를 확인
 }
