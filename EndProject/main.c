@@ -11,7 +11,9 @@
 
 #define F_CPU 14745600UL
 #define usePoint 100
-#define bosstimeSetting 350
+#define bosstimeSetting 200
+#define EndTime 180
+#define EndPoint 360
 
 enum gameStates{ waiting = 0, running = 1, win = 2, lose = 3, bosstime = 4 };
 enum characterCodes{ birld_L = 1, birld_H = 2, cactus_ = 3, dino_ = 4, bossattack_L = 5,bossattack_M = 6,bossattack_H = 7,};
@@ -89,9 +91,9 @@ int main(void){
 			
 			if(times == 50)
 				speed = 1;
-			else if(times == 150)
+			else if(times == 100)
 				speed = 2;
-			else if(times == 300)
+			else if(times == 200)
 				speed = 3;
 			
 		}
@@ -99,6 +101,7 @@ int main(void){
 		// End
 		printEndPage();
 	}
+	
 }
 //------------------------------------------------------------------------------------------
 void makeBlock(void){
@@ -116,9 +119,9 @@ void backgroundMove(void){
 void speedDelay(void){
 	// speed가 올라갈 수록 delay텀이 짧아지면서 속도가 향상됨
 	if(speed == 0)
-	_delay_ms(600);
+	_delay_ms(400);
 	else if(speed == 1)
-	_delay_ms(300);
+	_delay_ms(200);
 	else if(speed == 2)
 	_delay_ms(100);
 	else
@@ -146,7 +149,7 @@ void EndCheck(void){
 		}
 		break;
 		default:
-		if (times == 300 && point == 600){
+		if (times == EndTime && point == EndPoint){
 			gameState = win;
 			point += 500;
 		}
@@ -208,7 +211,6 @@ SIGNAL(INT0_vect)
 			UI_Update(i);
 			speedDelay();
 		}
-		//gameState = lose;
 		jumpFlag = ~jumpFlag;	// jump flag off
 	}
 }
@@ -227,9 +229,14 @@ SIGNAL(INT1_vect)
 		lcd_clear();
 		UI_Update(0);
 		if(gameState == bosstime)
-		if(!(--bosscounter)) gameState = win;
+		if(!(--bosscounter)){
+			 gameState = win;
+			 point += 1000;
+		}
 	}
 }
+
+// 게임 강제 종료
 SIGNAL(INT2_vect)
 {
 	if(gameState == running || gameState == bosstime){
@@ -297,8 +304,8 @@ void printCactus(uint8_t x){
 }
 void printBirld(uint8_t x, uint8_t y){
 	uint8_t updown[] = {0, 22};
-	//glcd_draw_bitmap(birld,(38-updown[y]), (130-x), 24,24);
-	glcd_draw_bitmap(birld,(36-updown[y]), x, 24,24);
+	//glcd_draw_bitmap(birld2,(36-updown[1]), x, 20, 24);
+	glcd_draw_bitmap(birld,(36-updown[y]), x, 20,24);
 }
 void printDino(uint8_t jump){
 	glcd_draw_bitmap(dino,(38-jump),0, 26,24);
@@ -349,6 +356,7 @@ void blockRouter(uint8_t block, int index){
 }
 void UI_Update(uint8_t jump){
 	lcd_clear();
+	_delay_ms(10);
 	printPoint();
 	GLCD_Line(60, 0, 60, 140);
 	printDino(jump);
@@ -359,6 +367,5 @@ void UI_Update(uint8_t jump){
 		pre = gameBoard[i];
 		blockRouter(pre, i);
 	}
-	_delay_ms(10);
 	EndCheck();
 }
